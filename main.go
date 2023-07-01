@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"golang.org/x/term"
+	"log"
 	"os"
 )
 
@@ -96,6 +97,7 @@ func main() {
 			updateFlags(r0)
 			break
 		case OP_AND:
+
 			break
 		case OP_NOT:
 			break
@@ -108,6 +110,24 @@ func main() {
 		case OP_LD:
 			break
 		case OP_LDI:
+			var r0 uint16 = (instr >> 9) & 0x7         // destination register
+			var PCoffset9 = SignExtend(instr&0x1FF, 9) // PCoffset 9
+			/*
+				add PCoffset to the current PC, look at that memory location to get the final address
+
+				In memory, it may be layed out like this:
+
+				Address Label      Value
+				0x123:  far_data = 0x456
+				...
+				0x456:  string   = 'a'
+
+				if PC was at 0x100
+				LDI R0 0x023
+				would load 'a' into R0
+			*/
+			reg[r0] = MemoryRead(MemoryRead(reg[R_PC] + PCoffset9))
+			updateFlags(r0)
 			break
 		case OP_LDR:
 			break
@@ -126,9 +146,7 @@ func main() {
 		case OP_RTI:
 			fallthrough
 		default:
-			// Bad opcode
-			break
-
+			log.Fatal("Bad opcode") // RES & RTI -> Bad opcode
 		}
 	}
 

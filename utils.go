@@ -22,6 +22,7 @@ Reminder:
 			0x7  ->  111
 			0xF  ->  1111
 			0x1F ->  11111
+			0x1FF -> 111111111
 */
 
 // SignExtend converts a 5 bitCount integer to a 16 bits number (preserving sign)
