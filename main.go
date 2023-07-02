@@ -19,7 +19,7 @@ var (
 func updateFlags(r uint16) {
 	if reg[r] == 0 {
 		reg[R_COND] = FL_ZRO
-	} else if (reg[r] >> 15) == 1 { /* a 1 in the left-most bit indicates negative */
+	} else if (reg[r] >> 15) == 0x1 { /* a 1 in the left-most bit indicates negative */
 		reg[R_COND] = FL_NEG
 	} else {
 		reg[R_COND] = FL_POS
@@ -66,6 +66,18 @@ func main() {
 		// 16 bits numbers: 12 to 15 bits represents the operation type
 		op := instr >> 12
 		switch op {
+		case OP_BR: // conditional branch
+			var n bool = (instr >> 11) & 0x1
+			var z bool = (instr >> 10) & 0x1
+			var p bool = (instr >> 9) & 0x1
+			regVal := reg[R_COND]
+
+			// branch with conditions
+			if (n && regVal == FL_NEG) || (z && regVal == FL_ZRO) || (p && regVal == FL_POS) {
+				reg[R_PC] += SignExtend(instr&0x1FF, 9)
+			}
+
+			break
 		case OP_ADD:
 			/*
 				ADD operation:
@@ -83,7 +95,7 @@ func main() {
 			0001101011000010 >> 9 : 0000000000001101 & 0x7 -> 0000000000000101 (5)
 			*/
 			var r0 uint16 = (instr >> 9) & 0x7 // 0x7 -> 111 (only extract 3 right-most bits)
-			var r1 uint16 = (instr >> 6) & 0x3 // 0x7 -> 111
+			var r1 uint16 = (instr >> 6) & 0x7 // 0x7 -> 111
 
 			// check whether we are in immediate mode
 			if (instr >> 5) & 0x1 {
@@ -97,17 +109,50 @@ func main() {
 			updateFlags(r0)
 			break
 		case OP_AND:
+			var r0 uint16 = (instr >> 9) & 0x7 // 0x7 -> 111 (only extract 3 right-most bits)
+			var r1 uint16 = (instr >> 6) & 0x7
 
+			// check whether we are in immediate mode
+			if (instr >> 5) & 0x1 {
+				var imm5 = SignExtend(instr&0x1F, 5)
+				reg[r0] = reg[r1] & imm5
+			} else {
+				var r2 uint16 = instr & 0x7
+				reg[r0] = reg[r1] & reg[r2]
+			}
+
+			updateFlags(r0)
+			break
+		case OP_JMP: // JMP & RET have same OP CODE: RET = JMP R7
+			var baseR uint16 = (instr >> 6) & 0x7
+			// PC jumps to the location specified in baseR
+			// RET jumps automatically to R7
+			reg[R_PC] = reg[baseR]
 			break
 		case OP_NOT:
-			break
-		case OP_BR:
-			break
-		case OP_JMP:
+			var r0 uint16 = (instr >> 9) & 0x7 // DR
+			var r1 uint16 = (instr >> 6) & 0x7 // SR
+			reg[r0] = ^reg[r1]
+			updateFlags(r0)
 			break
 		case OP_JSR:
+			reg[R_R7] = reg[R_PC] // save PC into R7
+
+			if (instr >> 11) & 0x1 {
+				// JSR
+				var PCoffset11 uint16 = instr & 0x7FF
+				reg[R_PC] += SignExtend(PCoffset11, 11)
+			} else {
+				// JSRR
+				var baseR uint16 = (instr >> 6) & 0x7
+				reg[R_PC] = reg[baseR]
+			}
+
 			break
 		case OP_LD:
+			var r0 uint16 = (instr >> 9) & 0x7 // DR
+			reg[r0] = MemoryRead(reg[R_PC] + SignExtend(instr&0x1FF, 9))
+			updateFlags(r0)
 			break
 		case OP_LDI:
 			var r0 uint16 = (instr >> 9) & 0x7         // destination register
@@ -130,8 +175,15 @@ func main() {
 			updateFlags(r0)
 			break
 		case OP_LDR:
+			var r0 uint16 = (instr >> 9) & 0x7 // DR
+			var baseR uint16 = (instr >> 6) & 0x7
+			reg[r0] = MemoryRead(reg[baseR] + SignExtend(instr&0x3F, 6))
+			updateFlags(r0)
 			break
 		case OP_LEA:
+			var r0 uint16 = (instr >> 9) & 0x7 // DR
+			reg[r0] = reg[R_PC] + SignExtend(instr&0x1FF, 9)
+			updateFlags(r0)
 			break
 		case OP_ST:
 			break
