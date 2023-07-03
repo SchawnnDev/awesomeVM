@@ -135,7 +135,7 @@ func main() {
 			reg[r0] = ^reg[r1]
 			updateFlags(r0)
 			break
-		case OP_JSR:
+		case OP_JSR: // jump register
 			reg[R_R7] = reg[R_PC] // save PC into R7
 
 			if (instr >> 11) & 0x1 {
@@ -149,12 +149,12 @@ func main() {
 			}
 
 			break
-		case OP_LD:
+		case OP_LD: // load
 			var r0 uint16 = (instr >> 9) & 0x7 // DR
 			reg[r0] = MemoryRead(reg[R_PC] + SignExtend(instr&0x1FF, 9))
 			updateFlags(r0)
 			break
-		case OP_LDI:
+		case OP_LDI: // load indrect
 			var r0 uint16 = (instr >> 9) & 0x7         // destination register
 			var PCoffset9 = SignExtend(instr&0x1FF, 9) // PCoffset 9
 			/*
@@ -174,22 +174,31 @@ func main() {
 			reg[r0] = MemoryRead(MemoryRead(reg[R_PC] + PCoffset9))
 			updateFlags(r0)
 			break
-		case OP_LDR:
+		case OP_LDR: // load register
 			var r0 uint16 = (instr >> 9) & 0x7 // DR
 			var baseR uint16 = (instr >> 6) & 0x7
 			reg[r0] = MemoryRead(reg[baseR] + SignExtend(instr&0x3F, 6))
 			updateFlags(r0)
 			break
-		case OP_LEA:
+		case OP_LEA: // load effective address
 			var r0 uint16 = (instr >> 9) & 0x7 // DR
 			reg[r0] = reg[R_PC] + SignExtend(instr&0x1FF, 9)
 			updateFlags(r0)
 			break
-		case OP_ST:
+		case OP_ST: // store
+			var r0 uint16 = (instr >> 9) & 0x7 // SR
+			// The contents of the register specified by SR are stored in the memory location
+			MemoryWrite(reg[R_PC]+SignExtend(instr&0x1FF, 9), reg[r0])
 			break
-		case OP_STI:
+		case OP_STI: // store indirect
+			var r0 uint16 = (instr >> 9) & 0x7 // SR
+			// The contents of the register specified by SR are stored in the memory location
+			MemoryWrite(MemoryRead(reg[R_PC]+SignExtend(instr&0x1FF, 9)), reg[r0])
 			break
-		case OP_STR:
+		case OP_STR: // store register
+			var r0 uint16 = (instr >> 9) & 0x7 // SR
+			var baseR uint16 = (instr >> 6) & 0x7
+			MemoryWrite(reg[baseR]+SignExtend(instr&0x3F, 6), reg[r0])
 			break
 		case OP_TRAP:
 			break
