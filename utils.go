@@ -1,5 +1,13 @@
 package main
 
+import (
+	"bytes"
+	"encoding/binary"
+	"os"
+)
+
+var HostEndian binary.ByteOrder
+
 /*
 Reminder:
 	The most significant bit: Left most bit
@@ -44,4 +52,67 @@ func SignExtend(x uint16, bitCount int) uint16 {
 		x |= 0xFFFF << bitCount
 	}
 	return x
+}
+
+// Swap16 LC-3 programs are big-endian (modern computers are little-endian)
+// therefore we should swap each uint16 that is loaded
+func Swap16(x uint16) uint16 {
+	if HostEndian != binary.BigEndian {
+		return x
+	}
+	return (x << 8) | (x >> 8)
+}
+
+func ReadImageFile() {
+
+}
+
+func ReadImage(imagePath string) error {
+	file, err := os.Open(imagePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+
+	size := info.Size()
+	data := make([]byte, size)
+	_, err = file.Read(data)
+	if err != nil {
+		return err
+	}
+
+	buffer := bytes.NewBuffer(data)
+	// origin tells us where in memory to place the image
+	origin := Swap16(binary.BigEndian.Uint16(buffer.Next(2)))
+
+	for i := 0; i < buffer.Len(); i++ {
+		b := buffer.Next(2)
+		if len(b) == 0 {
+			break
+		}
+		memory[origin] = Swap16(binary.BigEndian.Uint16(b))
+		origin++
+	}
+
+	return nil
+}
+
+// HostEndian is the byte order of the host computer
+func init() {
+	// []byte{0x12, 0x34} : create a two-byte slice representing a 16-bit value.
+	// binary.BigEndian.Uint16() : convert the two-byte slice to an uint16 value using big-endian byte order.
+	// == 0x1234 : compare the converted value with the expected value 0x1234.
+	isBigEndian := binary.BigEndian.Uint16([]byte{0x12, 0x34}) == 0x1234
+
+	if isBigEndian {
+		HostEndian = binary.BigEndian
+	} else {
+		HostEndian = binary.LittleEndian
+	}
+
 }

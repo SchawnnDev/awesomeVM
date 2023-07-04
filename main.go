@@ -8,11 +8,11 @@ import (
 )
 
 const (
-	MEMORY_MAX = 1 << 16
+	MEMORY_MAX = uint16((1 << 16) - 1)
 )
 
 var (
-	memory = [MEMORY_MAX]uint16{}
+	memory = [MEMORY_MAX + 1]uint16{}
 	reg    = [R_COUNT]uint16{}
 )
 
@@ -236,8 +236,21 @@ func main() {
 				fmt.Printf("%c", char[0])
 				break
 			case TRAP_PUTSP:
+				i := reg[R_R0]
+
+				for {
+					c := memory[i]
+					if c == 0 {
+						break
+					}
+					fmt.Printf("%c%c", c&0xFF, c>>8)
+					i++
+				}
+
 				break
 			case TRAP_HALT:
+				fmt.Printf("HALT")
+				running = 0
 				break
 			}
 

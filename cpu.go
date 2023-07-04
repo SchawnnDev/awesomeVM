@@ -51,3 +51,9 @@ const (
 	TRAP_PUTSP = 0x24 /* output a byte string */
 	TRAP_HALT  = 0x25 /* halt the program */
 )
+
+// Memory Mapped Registers
+const (
+	MR_KBSR = 0xFE00 /* keyboard status */
+	MR_KBDR = 0xFE02 /* keyboard data */
+)
