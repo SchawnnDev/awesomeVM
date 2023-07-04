@@ -201,6 +201,46 @@ func main() {
 			MemoryWrite(reg[baseR]+SignExtend(instr&0x3F, 6), reg[r0])
 			break
 		case OP_TRAP:
+			var trapVect8 uint16 = instr & 0xFF // trap code
+			reg[R_R7] = reg[R_PC]
+
+			switch trapVect8 {
+			case TRAP_GETC: // get char without printing and save it to r0
+				var char [1]byte
+				_, err = os.Stdin.Read(char[:])
+				if err != nil {
+					log.Fatal("[OP_TRAP] TRAP_GETC: Could not read single char from terminal")
+				}
+				reg[R_R0] = uint16(char[0])
+				updateFlags(R_R0)
+				break
+			case TRAP_OUT: // print one char
+				fmt.Printf("%c", reg[R_R0])
+				break
+			case TRAP_PUTS:
+				c := memory[reg[R_R0]]
+
+				for c != 0 {
+					fmt.Printf("%c", c)
+				}
+
+				break
+			case TRAP_IN:
+				var char [1]byte
+				_, err = os.Stdin.Read(char[:])
+				if err != nil {
+					log.Fatal("[OP_TRAP] TRAP_GETC: Could not read single char from terminal")
+				}
+				reg[R_R0] = uint16(char[0])
+				updateFlags(R_R0)
+				fmt.Printf("%c", char[0])
+				break
+			case TRAP_PUTSP:
+				break
+			case TRAP_HALT:
+				break
+			}
+
 			break
 		case OP_RES:
 			fallthrough
