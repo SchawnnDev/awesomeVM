@@ -2,18 +2,13 @@ package main
 
 import (
 	"fmt"
-	"golang.org/x/term"
+	"github.com/eiannone/keyboard"
 	"log"
 	"os"
 )
 
-const (
-	MEMORY_MAX = uint16((1 << 16) - 1)
-)
-
 var (
-	memory = [MEMORY_MAX + 1]uint16{}
-	reg    = [R_COUNT]uint16{}
+	reg = [R_COUNT]uint16{}
 )
 
 func updateFlags(r uint16) {
@@ -35,7 +30,7 @@ func main() {
 
 	var err error
 
-	for i := 0; i < len(os.Args); i++ {
+	for i := 1; i < len(os.Args); i++ {
 		err = ReadImage(os.Args[i])
 		if err != nil {
 			fmt.Printf("Failed to load image: %s\n", os.Args[i])
@@ -44,11 +39,11 @@ func main() {
 	}
 
 	// Setup terminal
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		panic(err)
-	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+	//oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	//if err != nil {
+	//	panic(err)
+	//}
+	//defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	// one condition flag should be set at any given time
 	reg[R_COND] = FL_ZRO
@@ -61,15 +56,16 @@ func main() {
 
 	for running == 1 {
 		// fetch
-		reg[R_PC]++
 		instr := MemoryRead(reg[R_PC])
+		reg[R_PC]++
 		// 16 bits numbers: 12 to 15 bits represents the operation type
 		op := instr >> 12
+
 		switch op {
 		case OP_BR: // conditional branch
-			var n bool = (instr >> 11) & 0x1
-			var z bool = (instr >> 10) & 0x1
-			var p bool = (instr >> 9) & 0x1
+			var n bool = ((instr >> 11) & 0x1) != 0
+			var z bool = ((instr >> 10) & 0x1) != 0
+			var p bool = ((instr >> 9) & 0x1) != 0
 			regVal := reg[R_COND]
 
 			// branch with conditions
@@ -98,7 +94,7 @@ func main() {
 			var r1 uint16 = (instr >> 6) & 0x7 // 0x7 -> 111
 
 			// check whether we are in immediate mode
-			if (instr >> 5) & 0x1 {
+			if ((instr >> 5) & 0x1) != 0 {
 				var imm5 = SignExtend(instr&0x1F, 5)
 				reg[r0] = reg[r1] + imm5
 			} else {
@@ -113,7 +109,7 @@ func main() {
 			var r1 uint16 = (instr >> 6) & 0x7
 
 			// check whether we are in immediate mode
-			if (instr >> 5) & 0x1 {
+			if ((instr >> 5) & 0x1) != 0 {
 				var imm5 = SignExtend(instr&0x1F, 5)
 				reg[r0] = reg[r1] & imm5
 			} else {
@@ -138,7 +134,7 @@ func main() {
 		case OP_JSR: // jump register
 			reg[R_R7] = reg[R_PC] // save PC into R7
 
-			if (instr >> 11) & 0x1 {
+			if ((instr >> 11) & 0x1) != 0 {
 				// JSR
 				var PCoffset11 uint16 = instr & 0x7FF
 				reg[R_PC] += SignExtend(PCoffset11, 11)
@@ -206,32 +202,45 @@ func main() {
 
 			switch trapVect8 {
 			case TRAP_GETC: // get char without printing and save it to r0
-				var char [1]byte
-				_, err = os.Stdin.Read(char[:])
+				ch, key, err := keyboard.GetSingleKey()
 				if err != nil {
 					log.Fatal("[OP_TRAP] TRAP_GETC: Could not read single char from terminal")
 				}
-				reg[R_R0] = uint16(char[0])
+
+				if key == keyboard.KeyCtrlC {
+					log.Fatal("interrupt")
+				}
+				reg[R_R0] = uint16(ch)
 				updateFlags(R_R0)
 				break
 			case TRAP_OUT: // print one char
 				fmt.Printf("%c", reg[R_R0])
 				break
 			case TRAP_PUTS:
-				c := memory[reg[R_R0]]
+				i := uint16(0)
 
-				for c != 0 {
+				for {
+					c := memory[reg[R_R0]+i]
+					if c == 0 {
+						break
+					}
 					fmt.Printf("%c", c)
+					i++
 				}
 
 				break
 			case TRAP_IN:
 				var char [1]byte
-				_, err = os.Stdin.Read(char[:])
+				ch, key, err := keyboard.GetSingleKey()
 				if err != nil {
-					log.Fatal("[OP_TRAP] TRAP_GETC: Could not read single char from terminal")
+					log.Fatal("[OP_TRAP] TRAP_IN: Could not read single char from terminal", err)
 				}
-				reg[R_R0] = uint16(char[0])
+
+				if key == keyboard.KeyCtrlC {
+					log.Fatal("interrupt")
+				}
+
+				reg[R_R0] = uint16(ch)
 				updateFlags(R_R0)
 				fmt.Printf("%c", char[0])
 				break
@@ -260,7 +269,7 @@ func main() {
 		case OP_RTI:
 			fallthrough
 		default:
-			log.Fatal("Bad opcode") // RES & RTI -> Bad opcode
+			log.Fatal("Bad opcode: ", op) // RES & RTI -> Bad opcode
 		}
 	}
 

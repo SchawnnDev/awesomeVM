@@ -48,7 +48,7 @@ Reminder:
 // <=> 1111111111111111 << 5 <=> 1111111111100000
 // 000000000010011 | 1111111111100000 => 1111111111110011 (-13 in 16 bits)
 func SignExtend(x uint16, bitCount int) uint16 {
-	if (x >> (bitCount - 1)) & 1 {
+	if ((x >> (bitCount - 1)) & 1) != 0 {
 		x |= 0xFFFF << bitCount
 	}
 	return x
@@ -88,14 +88,14 @@ func ReadImage(imagePath string) error {
 
 	buffer := bytes.NewBuffer(data)
 	// origin tells us where in memory to place the image
-	origin := Swap16(binary.BigEndian.Uint16(buffer.Next(2)))
+	origin := binary.BigEndian.Uint16(buffer.Next(2))
 
 	for i := 0; i < buffer.Len(); i++ {
 		b := buffer.Next(2)
 		if len(b) == 0 {
 			break
 		}
-		memory[origin] = Swap16(binary.BigEndian.Uint16(b))
+		memory[origin] = binary.BigEndian.Uint16(b)
 		origin++
 	}
 

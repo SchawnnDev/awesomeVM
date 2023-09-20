@@ -1,5 +1,14 @@
 package main
 
+import (
+	"github.com/eiannone/keyboard"
+	"log"
+)
+
+var (
+	memory = [1 << 16]uint16{}
+)
+
 // MemoryWrite writes val to address
 func MemoryWrite(address, val uint16) {
 	memory[address] = val
@@ -14,6 +23,24 @@ func MemoryRead(address uint16) uint16 {
 	When memory is read from KBSR, the getter will check the keyboard and update both memory locations.
 	*/
 	if address == MR_KBSR {
+
+		ch, controlKey, err := keyboard.GetSingleKey()
+
+		if controlKey == keyboard.KeyCtrlC {
+			// do something
+			log.Fatal("interrupt")
+		}
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if ch != 0 {
+			memory[MR_KBSR] = 1 << 15
+			memory[MR_KBDR] = uint16(ch)
+		} else {
+			memory[MR_KBSR] = 0
+		}
 
 	}
 
