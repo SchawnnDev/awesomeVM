@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/eiannone/keyboard"
 	"log"
 	"os"
+
+	"github.com/eiannone/keyboard"
 )
 
 var (
@@ -63,17 +64,12 @@ func main() {
 
 		switch op {
 		case OP_BR: // conditional branch
-			var n bool = ((instr >> 11) & 0x1) != 0
-			var z bool = ((instr >> 10) & 0x1) != 0
-			var p bool = ((instr >> 9) & 0x1) != 0
-			regVal := reg[R_COND]
-
-			// branch with conditions
-			if (n && regVal == FL_NEG) || (z && regVal == FL_ZRO) || (p && regVal == FL_POS) {
+			condFlag := (instr >> 9) & 0x7
+			if (condFlag & reg[R_COND]) != 0 {
 				reg[R_PC] += SignExtend(instr&0x1FF, 9)
 			}
-
 			break
+
 		case OP_ADD:
 			/*
 				ADD operation:
@@ -150,7 +146,7 @@ func main() {
 			reg[r0] = MemoryRead(reg[R_PC] + SignExtend(instr&0x1FF, 9))
 			updateFlags(r0)
 			break
-		case OP_LDI: // load indrect
+		case OP_LDI: // load indirect
 			var r0 uint16 = (instr >> 9) & 0x7         // destination register
 			var PCoffset9 = SignExtend(instr&0x1FF, 9) // PCoffset 9
 			/*

@@ -1,12 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
+	"errors"
+	"io"
 	"os"
 )
-
-var HostEndian binary.ByteOrder
 
 /*
 Reminder:
@@ -48,71 +47,43 @@ Reminder:
 // <=> 1111111111111111 << 5 <=> 1111111111100000
 // 000000000010011 | 1111111111100000 => 1111111111110011 (-13 in 16 bits)
 func SignExtend(x uint16, bitCount int) uint16 {
-	if ((x >> (bitCount - 1)) & 1) != 0 {
-		x |= 0xFFFF << bitCount
+	if ((x >> (bitCount - 1)) & 1) == 1 {
+		x |= ^uint16(0) << bitCount
 	}
 	return x
-}
-
-// Swap16 LC-3 programs are big-endian (modern computers are little-endian)
-// therefore we should swap each uint16 that is loaded
-func Swap16(x uint16) uint16 {
-	if HostEndian != binary.BigEndian {
-		return x
-	}
-	return (x << 8) | (x >> 8)
 }
 
 func ReadImageFile() {
 
 }
 
-func ReadImage(imagePath string) error {
-	file, err := os.Open(imagePath)
+// ReadImage reads an LC-3 object file (big-endian 16-bit words) into memory.
+func ReadImage(path string) error {
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer f.Close()
 
-	info, err := file.Stat()
-	if err != nil {
+	// read origin (big-endian)
+	var origin uint16
+	if err = binary.Read(f, binary.BigEndian, &origin); err != nil {
 		return err
 	}
+	addr := int(origin)
 
-	size := info.Size()
-	data := make([]byte, size)
-	_, err = file.Read(data)
-	if err != nil {
-		return err
-	}
-
-	buffer := bytes.NewBuffer(data)
-	// origin tells us where in memory to place the image
-	origin := binary.BigEndian.Uint16(buffer.Next(2))
-
-	for i := 0; i < buffer.Len(); i++ {
-		b := buffer.Next(2)
-		if len(b) == 0 {
+	// read remaining 16-bit words (big-endian) into memory starting at origin
+	buf := make([]byte, 2)
+	for {
+		_, err = io.ReadFull(f, buf)
+		if err == io.EOF || errors.Is(err, io.ErrUnexpectedEOF) {
 			break
 		}
-		memory[origin] = binary.BigEndian.Uint16(b)
-		origin++
+		if err != nil {
+			return err
+		}
+		memory[addr] = binary.BigEndian.Uint16(buf)
+		addr++
 	}
-
 	return nil
-}
-
-// HostEndian is the byte order of the host computer
-func init() {
-	// []byte{0x12, 0x34} : create a two-byte slice representing a 16-bit value.
-	// binary.BigEndian.Uint16() : convert the two-byte slice to an uint16 value using big-endian byte order.
-	// == 0x1234 : compare the converted value with the expected value 0x1234.
-	isBigEndian := binary.BigEndian.Uint16([]byte{0x12, 0x34}) == 0x1234
-
-	if isBigEndian {
-		HostEndian = binary.BigEndian
-	} else {
-		HostEndian = binary.LittleEndian
-	}
-
 }

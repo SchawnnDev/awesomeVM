@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/eiannone/keyboard"
 	"log"
+
+	"github.com/eiannone/keyboard"
 )
 
 var (
