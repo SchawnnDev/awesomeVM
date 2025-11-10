@@ -25,15 +25,20 @@ Reminder:
 	Bitwise AND : 1 & 1 -> 1, 1 & 0 -> 0, 0 & 1 -> 0, 0 & 0 -> 0
 	Bitwise NOT : ~1 -> 0, ~0 -> 1
 
-	Hex:	0x1   -> 1
-			0x3   -> 11
-			0x7   -> 111
-			0xF   -> 1111
-			0x1F  -> 11111
-			0x3F  -> 111111
-			0xFF  -> 11111111
-			0x1FF -> 111111111
-			0x7FF -> 11111111111
+	Hex:	0x1     -> 1
+			0x3     -> 11
+			0x7     -> 111
+			0xF     -> 1111
+			0x1F    -> 11111
+			0x3F    -> 111111
+			0xFF    -> 11111111
+			0x1FF   -> 111111111
+			0x7FF   -> 11111111111
+			0xFFF   -> 111111111111
+			0x1FFF  -> 1111111111111
+			0x7FFF  -> 111111111111111
+			0xFFFF  -> 1111111111111111 (16 bits)
+			3FFFFFF -> 11111111111111111111111111 (24 bits)
 */
 
 // SignExtend converts a 5 bitCount integer to a 16 bits number (preserving sign)
