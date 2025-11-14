@@ -1,6 +1,6 @@
 package lc3
 
-// Registers
+// registers
 const (
 	R_R0 = iota
 	R_R1
@@ -52,7 +52,7 @@ const (
 	TRAP_HALT  = 0x25 /* halt the program */
 )
 
-// Memory Mapped Registers
+// Memory Mapped registers
 const (
 	MR_KBSR = 0xFE00 /* keyboard status */
 	MR_KBDR = 0xFE02 /* keyboard data */

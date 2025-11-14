@@ -2,6 +2,7 @@ package main
 
 import (
 	"awesomeVM/internal/lc3"
+	"awesomeVM/internal/utils"
 	"fmt"
 	"log"
 	"os"
@@ -67,7 +68,7 @@ func main() {
 		case lc3.OP_BR: // conditional branch
 			condFlag := (instr >> 9) & 0x7
 			if (condFlag & reg[lc3.R_COND]) != 0 {
-				reg[lc3.R_PC] += lc3.SignExtend(instr&0x1FF, 9)
+				reg[lc3.R_PC] += utils.SignExtend(instr&0x1FF, 9)
 			}
 			break
 
@@ -92,7 +93,7 @@ func main() {
 
 			// check whether we are in immediate mode
 			if ((instr >> 5) & 0x1) != 0 {
-				var imm5 = lc3.SignExtend(instr&0x1F, 5)
+				var imm5 = utils.SignExtend(instr&0x1F, 5)
 				reg[r0] = reg[r1] + imm5
 			} else {
 				var r2 uint16 = instr & 0x7
@@ -107,7 +108,7 @@ func main() {
 
 			// check whether we are in immediate mode
 			if ((instr >> 5) & 0x1) != 0 {
-				var imm5 = lc3.SignExtend(instr&0x1F, 5)
+				var imm5 = utils.SignExtend(instr&0x1F, 5)
 				reg[r0] = reg[r1] & imm5
 			} else {
 				var r2 uint16 = instr & 0x7
@@ -134,7 +135,7 @@ func main() {
 			if ((instr >> 11) & 0x1) != 0 {
 				// JSR
 				var PCoffset11 uint16 = instr & 0x7FF
-				reg[lc3.R_PC] += lc3.SignExtend(PCoffset11, 11)
+				reg[lc3.R_PC] += utils.SignExtend(PCoffset11, 11)
 			} else {
 				// JSRR
 				var baseR uint16 = (instr >> 6) & 0x7
@@ -144,12 +145,12 @@ func main() {
 			break
 		case lc3.OP_LD: // load
 			var r0 uint16 = (instr >> 9) & 0x7 // DR
-			reg[r0] = lc3.MemoryRead(reg[lc3.R_PC] + lc3.SignExtend(instr&0x1FF, 9))
+			reg[r0] = lc3.MemoryRead(reg[lc3.R_PC] + utils.SignExtend(instr&0x1FF, 9))
 			updateFlags(r0)
 			break
 		case lc3.OP_LDI: // load indirect
-			var r0 uint16 = (instr >> 9) & 0x7             // destination register
-			var PCoffset9 = lc3.SignExtend(instr&0x1FF, 9) // PCoffset 9
+			var r0 uint16 = (instr >> 9) & 0x7               // destination register
+			var PCoffset9 = utils.SignExtend(instr&0x1FF, 9) // PCoffset 9
 			/*
 				add PCoffset to the current PC, look at that memory location to get the final address
 
@@ -170,28 +171,28 @@ func main() {
 		case lc3.OP_LDR: // load register
 			var r0 uint16 = (instr >> 9) & 0x7 // DR
 			var baseR uint16 = (instr >> 6) & 0x7
-			reg[r0] = lc3.MemoryRead(reg[baseR] + lc3.SignExtend(instr&0x3F, 6))
+			reg[r0] = lc3.MemoryRead(reg[baseR] + utils.SignExtend(instr&0x3F, 6))
 			updateFlags(r0)
 			break
 		case lc3.OP_LEA: // load effective address
 			var r0 uint16 = (instr >> 9) & 0x7 // DR
-			reg[r0] = reg[lc3.R_PC] + lc3.SignExtend(instr&0x1FF, 9)
+			reg[r0] = reg[lc3.R_PC] + utils.SignExtend(instr&0x1FF, 9)
 			updateFlags(r0)
 			break
 		case lc3.OP_ST: // store
 			var r0 uint16 = (instr >> 9) & 0x7 // SR
 			// The contents of the register specified by SR are stored in the memory location
-			lc3.MemoryWrite(reg[lc3.R_PC]+lc3.SignExtend(instr&0x1FF, 9), reg[r0])
+			lc3.MemoryWrite(reg[lc3.R_PC]+utils.SignExtend(instr&0x1FF, 9), reg[r0])
 			break
 		case lc3.OP_STI: // store indirect
 			var r0 uint16 = (instr >> 9) & 0x7 // SR
 			// The contents of the register specified by SR are stored in the memory location
-			lc3.MemoryWrite(lc3.MemoryRead(reg[lc3.R_PC]+lc3.SignExtend(instr&0x1FF, 9)), reg[r0])
+			lc3.MemoryWrite(lc3.MemoryRead(reg[lc3.R_PC]+utils.SignExtend(instr&0x1FF, 9)), reg[r0])
 			break
 		case lc3.OP_STR: // store register
 			var r0 uint16 = (instr >> 9) & 0x7 // SR
 			var baseR uint16 = (instr >> 6) & 0x7
-			lc3.MemoryWrite(reg[baseR]+lc3.SignExtend(instr&0x3F, 6), reg[r0])
+			lc3.MemoryWrite(reg[baseR]+utils.SignExtend(instr&0x3F, 6), reg[r0])
 			break
 		case lc3.OP_TRAP:
 			var trapVect8 uint16 = instr & 0xFF // trap code
