@@ -1,3 +1,6 @@
 basic
 basic.o
 test.s
+basic_mips32
+basic_mips32.o
+basic_mips32.s

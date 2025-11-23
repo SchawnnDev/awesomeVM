@@ -1,4 +1,4 @@
-package mips
+package mips32
 
 type Memory struct {
 	Data []byte

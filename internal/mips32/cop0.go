@@ -1,4 +1,4 @@
-package mips
+package mips32
 
 // COP0 implements a simplified but comprehensive MIPS32r1/r2 CP0 inspired by QEMU.
 // It models key registers, TLB operations, exceptions/interrupts, and a timer.

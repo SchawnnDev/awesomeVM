@@ -1,4 +1,4 @@
-package mips
+package mips32
 
 import (
 	"log"
@@ -9,6 +9,8 @@ const cop0TlbSize int = 16
 
 type CPU struct {
 	registers [32]uint32
+	LO        int32
+	HI        int32
 	PC        uint32
 	Memory    *Memory
 	running   atomic.Bool
@@ -92,7 +94,7 @@ func (cpu *CPU) Stop() {
 }
 
 // GetReg returns the value of register n (0-31)
-func (cpu *CPU) GetReg(n int) uint32 {
+func (cpu *CPU) GetReg(n uint8) uint32 {
 	if n < 0 || n > 31 {
 		return 0
 	}
@@ -100,7 +102,7 @@ func (cpu *CPU) GetReg(n int) uint32 {
 }
 
 // SetReg sets the value of register n (0-31), except $0 which is always zero
-func (cpu *CPU) SetReg(n int, val uint32) {
+func (cpu *CPU) SetReg(n uint8, val uint32) {
 	if n < 0 || n > 31 {
 		return
 	}

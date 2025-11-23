@@ -1,7 +1,7 @@
 package main
 
 import (
-	"awesomeVM/internal/mips"
+	"awesomeVM/internal/mips32"
 	"flag"
 	"log"
 	"math"
@@ -27,10 +27,10 @@ func main() {
 	definedMemory := uint32(*memoryFlag)
 
 	printIfVerbose(*verbose, "Allocating %d bytes of memory...", definedMemory)
-	memory := mips.NewMemory(definedMemory)
+	memory := mips32.NewMemory(definedMemory)
 
 	printIfVerbose(*verbose, "Starting CPU...")
-	cpu := mips.NewCPU(memory)
+	cpu := mips32.NewCPU(memory)
 
 	// create a channel to wait for CPU to stop
 	done := make(chan struct{})

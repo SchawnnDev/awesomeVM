@@ -1,11 +1,81 @@
-package mips
+package mips32
+
+import "awesomeVM/internal/utils"
 
 type OpCode uint8
+
+// hex <-> binary
+// 0 0000
+// 1 0001
+// 2 0010
+// 3 0011
+// 4 0100
+// 5 0101
+// 6 0110
+// 7 0111
+// 8 1000
+// 9 1001
+// A 1010
+// B 1011
+// C 1100
+// D 1101
+// E 1110
+// F 1111
 
 const (
 	// R-Type funct codes
 	OpCodeADD  OpCode = 0x20
 	OpCodeADDU OpCode = 0x8
+	OpCodeAND  OpCode = 0x24
+	// OpCodeDADD   OpCode = 0x2C MIPS64
+	// OpCodeDADDU  OpCode = 0x2D MIPS64
+	//OpCodeDDIV   OpCode = 0x1E MIPS64
+	// OpCodeDDIVU  OpCode = 0x1F MIPS64
+	OpCodeDIV  OpCode = 0x1A
+	OpCodeDIVU OpCode = 0x1B
+	//OpCodeDMULT  OpCode = 0x1C MIPS64
+	//OpCodeDMULTU OpCode = 0x1D MIPS64
+	//OpCodeDSLL   OpCode = 0x38 MIPS64
+	//OpCodeDSLL32 OpCode = 0x3C MIPS64
+	//OpCodeDSLLV  OpCode = 0x14 MIPS64
+	//OpCodeDSRA   OpCode = 0x3B MIPS64
+	//OpCodeDSRA32 OpCode = 0x3F MIPS64
+	//OpCodeDSRAV  OpCode = 0x17 MIPS64
+	//OpCodeDSRL   OpCode = 0x3A MIPS64
+	//OpCodeDSRL32 OpCode = 0x3E MIPS64
+	//OpCodeDSRLV  OpCode = 0x16 MIPS64
+	//OpCodeDSUB   OpCode = 0x2E MIPS64
+	//OpCodeDSUBU  OpCode = 0x2F MIPS64
+	OpCodeJALR  OpCode = 0x09
+	OpCodeJR    OpCode = 0x08
+	OpCodeMFHI  OpCode = 0x10
+	OpCodeMFLO  OpCode = 0x12
+	OpCodeMOVN  OpCode = 0x0B
+	OpCodeMOVZ  OpCode = 0x0A
+	OpCodeMTHI  OpCode = 0x11
+	OpCodeMTLO  OpCode = 0x13
+	OpCodeMULT  OpCode = 0x18
+	OpCodeMULTU OpCode = 0x19
+	OpCodeNOR   OpCode = 0x27
+	OpCodeOR    OpCode = 0x25
+	OpCodeSLL   OpCode = 0x00
+	OpCodeSLLV  OpCode = 0x04
+	OpCodeSLT   OpCode = 0x2A
+	OpCodeSLTU  OpCode = 0x2B
+	OpCodeSRA   OpCode = 0x03
+	OpCodeSRAV  OpCode = 0x07
+	OpCodeSRL   OpCode = 0x02
+	OpCodeSRLV  OpCode = 0x06
+	OpCodeSUB   OpCode = 0x22
+	OpCodeSUBU  OpCode = 0x23
+	OpCodeTEQ   OpCode = 0x34
+	OpCodeTGE   OpCode = 0x30
+	OpCodeTGEU  OpCode = 0x31
+	OpCodeTLT   OpCode = 0x32
+	OpCodeTLTU  OpCode = 0x33
+	OpCodeTNE   OpCode = 0x36
+	OpCodeXOR   OpCode = 0x26
+
 	// I-Type opcodes
 	OpCodeADDI  OpCode = 0x8
 	OpCodeADDIU OpCode = 0x9
@@ -86,10 +156,92 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 
 	// Funct is the opCode
 	switch funct {
+	// ADD rd, rs, rt
+	// -> traps on overflow
+	// if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// temp ←GPR[rs] + GPR[rt]
+	//if (32_bit_arithmetic_overflow) then
+	//		SignalException(IntegerOverflow)
+	//else
+	//		GPR[rd] ←sign_extend(temp31..0)
+	//endif
 	case OpCodeADD:
+		rsVal := int32(cpu.GetReg(ri.Rs))
+		rtVal := int32(cpu.GetReg(ri.Rt))
+		temp := rsVal + rtVal
 
-		break
+		// Check for overflow
+		if utils.CheckOverflow(rsVal, rtVal, temp) {
+			// Overflow occurred
+			vec := cpu.cp0.RaiseException(excOv, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
 
+		cpu.SetReg(ri.Rd, uint32(temp))
+
+		return nil, false
+	// ADDU rd, rs, rt
+	// if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// temp ←GPR[rs] + GPR[rt]
+	// GPR[rd]← sign_extend(temp31..0)
+	case OpCodeADDU:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		temp := rsVal + rtVal
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+	// AND rd, rs, rt
+	// GPR[rd] ← GPR[rs] and GPR[rt]
+	case OpCodeAND:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		temp := rsVal & rtVal
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+	//	DIV rs, rt
+	//	if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	//	I- 2 :, I- 1 : LO, HI ← undefined
+	//	I: q ← GPR[rs]31..0 div GPR[rt]31..0
+	//	LO ← sign_extend(q31..0)
+	//	r ← GPR[rs]31..0 mod GPR[rt]31..0
+	//	HI ← sign_extend(r31..0)
+	case OpCodeDIV:
+		rsVal := int32(cpu.GetReg(ri.Rs))
+		rtVal := int32(cpu.GetReg(ri.Rt))
+
+		if rtVal == 0 {
+			cpu.LO = 0
+			cpu.HI = 0
+			// no 0 divisor
+			return nil, false
+		}
+
+		cpu.LO = rsVal / rtVal // Quotient
+		cpu.HI = rsVal % rtVal // Remainder
+		return nil, false
+	// DIVU rs, rt
+	//	if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	//	I- 2 :, I- 1 : LO, HI ← undefined
+	//	I: q ← (0 || GPR[rs]31..0) div (0 || GPR[rt]31..0)
+	//	LO ← sign_extend(q31..0)
+	//	r ← (0 || GPR[rs]31..0) mod (0 || GPR[rt]31..0)
+	//	HI ← sign_extend(r31..0)
+	case OpCodeDIVU:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+
+		if rtVal == 0 {
+			cpu.LO = 0
+			cpu.HI = 0
+			// no 0 divisor
+			return nil, false
+		}
+
+		cpu.LO = int32(rsVal / rtVal) // Quotient
+		cpu.HI = int32(rsVal % rtVal) // Remainder
+		return nil, false
 	}
 
 	return nil, false
@@ -164,12 +316,12 @@ func (ci COP0Instruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 	case COP0Funct_MFC0:
 		// Move From CP0: rt = CP0[rd,sel]
 		val := cpu.GetCP0Reg(int(ci.Rd), int(ci.Sel))
-		cpu.SetReg(int(ci.Rt), val)
+		cpu.SetReg(ci.Rt, val)
 		return nil, false
 
 	case COP0Funct_MTC0:
 		// Move To CP0: CP0[rd,sel] = rt
-		val := cpu.GetReg(int(ci.Rt))
+		val := cpu.GetReg(ci.Rt)
 		cpu.SetCP0Reg(int(ci.Rd), int(ci.Sel), val)
 		return nil, false
 

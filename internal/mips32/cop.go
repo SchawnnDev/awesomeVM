@@ -1,4 +1,4 @@
-package mips
+package mips32
 
 type Coprocessor interface {
 	// LoadWord loads a word (4 bytes) from the given address.
