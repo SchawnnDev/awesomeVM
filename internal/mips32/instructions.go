@@ -25,7 +25,7 @@ type OpCode uint8
 const (
 	// R-Type funct codes
 	OpCodeADD  OpCode = 0x20
-	OpCodeADDU OpCode = 0x8
+	OpCodeADDU OpCode = 0x28
 	OpCodeAND  OpCode = 0x24
 	// OpCodeDADD   OpCode = 0x2C MIPS64
 	// OpCodeDADDU  OpCode = 0x2D MIPS64
@@ -242,6 +242,58 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 		cpu.LO = int32(rsVal / rtVal) // Quotient
 		cpu.HI = int32(rsVal % rtVal) // Remainder
 		return nil, false
+
+	// JALR rs
+	// JALR rd, rs
+	// Move From HI: rd = HI
+	// I: temp ← GPR[rs]
+	// GPR[rd] ← PC + 8
+	// I+ 1 :PC ← temp
+	case OpCodeJALR:
+		rsVal := cpu.GetReg(ri.Rs)
+
+		// Compute the return address (PC + 8 because of the delay slot)
+		retAddr := cpu.PC + 8
+
+		// Write return address into rd (unless rd = 0, handled by SetReg)
+		if ri.Rd != 0 {
+			cpu.SetReg(ri.Rd, retAddr)
+		}
+
+		// Jump target
+		newPC := rsVal
+
+		// true => we enter a delay slot
+		return &newPC, true
+	case OpCodeJR:
+	case OpCodeMFHI:
+	case OpCodeMFLO:
+	case OpCodeMOVN:
+	case OpCodeMOVZ:
+	case OpCodeMTHI:
+	case OpCodeMTLO:
+	case OpCodeMULT:
+	case OpCodeMULTU:
+	case OpCodeNOR:
+	case OpCodeOR:
+	case OpCodeSLL:
+	case OpCodeSLLV:
+	case OpCodeSLT:
+	case OpCodeSLTU:
+	case OpCodeSRA:
+	case OpCodeSRAV:
+	case OpCodeSRL:
+	case OpCodeSRLV:
+	case OpCodeSUB:
+	case OpCodeSUBU:
+	case OpCodeTEQ:
+	case OpCodeTGE:
+	case OpCodeTGEU:
+	case OpCodeTLT:
+	case OpCodeTLTU:
+	case OpCodeTNE:
+	case OpCodeXOR:
+
 	}
 
 	return nil, false
