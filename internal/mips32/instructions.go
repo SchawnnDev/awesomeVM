@@ -107,6 +107,7 @@ type Instruction interface {
 // we want to check the type of the instruction
 // there are 3 types, R, I and J:
 
+// DecodeInstruction decodes a 32-bit MIPS instruction into its corresponding Instruction type.
 // R is opcode = 0
 // I is opcode != 0, excluding 2 and 3, since:
 // J is opcode = 2 or 3
@@ -171,7 +172,7 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 		temp := rsVal + rtVal
 
 		// Check for overflow
-		if utils.CheckOverflow(rsVal, rtVal, temp) {
+		if utils.CheckAdditionOverflow(rsVal, rtVal, temp) {
 			// Overflow occurred
 			vec := cpu.cp0.RaiseException(excOv, cpu.PC, cpu.inDelay)
 			cpu.PC = vec
@@ -182,6 +183,7 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 		cpu.SetReg(ri.Rd, uint32(temp))
 
 		return nil, false
+
 	// ADDU rd, rs, rt
 	// if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
 	// temp ←GPR[rs] + GPR[rt]
@@ -192,6 +194,7 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 		temp := rsVal + rtVal
 		cpu.SetReg(ri.Rd, temp)
 		return nil, false
+
 	// AND rd, rs, rt
 	// GPR[rd] ← GPR[rs] and GPR[rt]
 	case OpCodeAND:
@@ -200,6 +203,7 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 		temp := rsVal & rtVal
 		cpu.SetReg(ri.Rd, temp)
 		return nil, false
+
 	//	DIV rs, rt
 	//	if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
 	//	I- 2 :, I- 1 : LO, HI ← undefined
@@ -221,6 +225,7 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 		cpu.LO = rsVal / rtVal // Quotient
 		cpu.HI = rsVal % rtVal // Remainder
 		return nil, false
+
 	// DIVU rs, rt
 	//	if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
 	//	I- 2 :, I- 1 : LO, HI ← undefined
@@ -265,35 +270,359 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 
 		// true => we enter a delay slot
 		return &newPC, true
-	case OpCodeJR:
-	case OpCodeMFHI:
-	case OpCodeMFLO:
-	case OpCodeMOVN:
-	case OpCodeMOVZ:
-	case OpCodeMTHI:
-	case OpCodeMTLO:
-	case OpCodeMULT:
-	case OpCodeMULTU:
-	case OpCodeNOR:
-	case OpCodeOR:
-	case OpCodeSLL:
-	case OpCodeSLLV:
-	case OpCodeSLT:
-	case OpCodeSLTU:
-	case OpCodeSRA:
-	case OpCodeSRAV:
-	case OpCodeSRL:
-	case OpCodeSRLV:
-	case OpCodeSUB:
-	case OpCodeSUBU:
-	case OpCodeTEQ:
-	case OpCodeTGE:
-	case OpCodeTGEU:
-	case OpCodeTLT:
-	case OpCodeTLTU:
-	case OpCodeTNE:
-	case OpCodeXOR:
 
+	// JR rs
+	// I: temp ← GPR[rs]
+	// I+ 1 :PC ← temp
+	case OpCodeJR:
+		rsVal := cpu.GetReg(ri.Rs)
+		return &rsVal, true
+
+	// MFHI rd
+	// GPR[rd] ← HI
+	case OpCodeMFHI:
+		cpu.SetReg(ri.Rd, uint32(cpu.HI))
+		return nil, false
+
+	// MFLO rd
+	// GPR[rd] ← LO
+	case OpCodeMFLO:
+		cpu.SetReg(ri.Rd, uint32(cpu.LO))
+		return nil, false
+
+	// MOVN rd, rs, rt
+	// if GPR[rt] ≠ 0 then
+	// 	GPR[rd] ← GPR[rs]
+	// endif
+	case OpCodeMOVN:
+		rtVal := cpu.GetReg(ri.Rt)
+		if rtVal != 0 {
+			rsVal := cpu.GetReg(ri.Rs)
+			cpu.SetReg(ri.Rd, rsVal)
+		}
+		return nil, false
+
+	// MOVZ rd, rs, rt
+	// if GPR[rt] = 0 then
+	// 	GPR[rd] ← GPR[rs]
+	// endif
+	case OpCodeMOVZ:
+		rtVal := cpu.GetReg(ri.Rt)
+		if rtVal == 0 {
+			rsVal := cpu.GetReg(ri.Rs)
+			cpu.SetReg(ri.Rd, rsVal)
+		}
+		return nil, false
+
+	// MTHI rs
+	// I- 2 :, I- 1 :HI ← undefined
+	// I: HI ← GPR[rs]
+	case OpCodeMTHI:
+		rsVal := cpu.GetReg(ri.Rs)
+		cpu.HI = int32(rsVal)
+		return nil, false
+
+	// MTLO rs
+	// I- 2 :, I- 1 :LO ← undefined
+	// I: LO ← GPR[rs]
+	case OpCodeMTLO:
+		rsVal := cpu.GetReg(ri.Rs)
+		cpu.LO = int32(rsVal)
+		return nil, false
+
+	// MULT rs, rt
+	// if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// I- 2 :, I- 1 : LO, HI ← undefined
+	// I: prod ← GPR[rs]31..0 * GPR[rt]31..0
+	// LO ← sign_extend(prod31..0)
+	// HI ← sign_extend(prod63..32
+	// [ 63 ..................... 32 ][ 31 ...................... 0 ]
+	//        HIGH 32 bits                LOW 32 bits
+	case OpCodeMULT:
+		rsVal := int32(cpu.GetReg(ri.Rs))
+		rtVal := int32(cpu.GetReg(ri.Rt))
+		prod := int64(rsVal) * int64(rtVal)
+		cpu.LO = int32(prod & 0xFFFFFFFF)         // Low 32 bits
+		cpu.HI = int32((prod >> 32) & 0xFFFFFFFF) // High 32 bits
+		return nil, false
+
+	// MULTU rs, rt
+	// if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// I- 2 :, I- 1 : LO, HI ← undefined
+	// I: prod ← (0 || GPR[rs]31..0) * (0 || GPR[rt]31..0)
+	// LO ← sign_extend(prod31..0)
+	// HI ← sign_extend(prod63..32
+	// [ 63 ..................... 32 ][ 31 ...................... 0 ]
+	//        HIGH 32 bits                LOW 32 bits
+	case OpCodeMULTU:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		prod := uint64(rsVal) * uint64(rtVal)
+		cpu.LO = int32(prod & 0xFFFFFFFF)         // Low 32 bits
+		cpu.HI = int32((prod >> 32) & 0xFFFFFFFF) // High 32 bits
+		return nil, false
+
+	// NOR rd, rs, rt
+	// GPR[rd] ← GPR[rs] nor GPR[rt]
+	case OpCodeNOR:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		temp := ^(rsVal | rtVal)
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// OR rd, rs, rt
+	// GPR[rd] ← GPR[rs] or GPR[rt]
+	case OpCodeOR:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		temp := rsVal | rtVal
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// SLL rd, rt, sa
+	// s ← sa
+	// temp ← GPR[rt](31-s)..0 || 0s
+	// GPR[rd]← sign_extend(temp)
+	case OpCodeSLL:
+		rtVal := cpu.GetReg(ri.Rt)
+		s := ri.Shamt
+		temp := rtVal << s
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// SLLV rd, rt, rs
+	// s ← GP[rs]4..0
+	// temp ← GPR[rt](31-s)..0 || 0s
+	// GPR[rd]← sign_extend(temp)
+	case OpCodeSLLV:
+		rsVal := cpu.GetReg(ri.Rs)
+		s := rsVal & 0xF
+		temp := cpu.GetReg(ri.Rt) << s
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// SLT rd, rs, rt
+	// if GPR[rs] < GPR[rt] then
+	//	GPR[rd] ← 0GPRLEN-1 || 1
+	// else
+	//	GPR[rd] ← 0GPRLEN
+	// endif
+	case OpCodeSLT:
+		rtVal := int32(cpu.GetReg(ri.Rt))
+		rsVal := int32(cpu.GetReg(ri.Rs))
+
+		if rsVal < rtVal {
+			cpu.SetReg(ri.Rd, 1)
+		} else {
+			cpu.SetReg(ri.Rd, 0)
+		}
+
+		return nil, false
+
+	// SLTU rd, rs, rt
+	// if (0 || GPR[rs]) < (0 || GPR[rt]) then
+	//	GPR[rd] ← 0GPRLEN-1 || 1
+	// else
+	//	GPR[rd] ← 0GPRLEN
+	// endif
+	case OpCodeSLTU:
+		rtVal := cpu.GetReg(ri.Rt)
+		rsVal := cpu.GetReg(ri.Rs)
+
+		if rsVal < rtVal {
+			cpu.SetReg(ri.Rd, 1)
+		} else {
+			cpu.SetReg(ri.Rd, 0)
+		}
+
+		return nil, false
+
+	// SRA rd, rt, sa
+	// if (NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// s ← sa
+	// temp ← (GPR[rt]31)
+	// s || GPR[rt]31..s
+	// GPR[rd]← sign_extend(temp)
+	case OpCodeSRA:
+		rtVal := cpu.GetReg(ri.Rt)
+		// arithmetic shift: interpret as signed 32-bit then shift
+		s := uint(ri.Shamt & 0x1F)
+		temp := uint32(int32(rtVal) >> s)
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// SRAV rd, rt, rs
+	// if (NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// s ← GPR[rs]4..0
+	// temp ← (GPR[rt]31)
+	// s || GPR[rt]31..s
+	// GPR[rd]← sign_extend(temp)
+	case OpCodeSRAV:
+		rsVal := cpu.GetReg(ri.Rs)
+		s := uint(rsVal & 0x1F)
+		temp := uint32(int32(cpu.GetReg(ri.Rt)) >> s)
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// SRL rd, rt, sa
+	// if (NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// s ← sa
+	// temp ← 0s || GPR[rt]31..s
+	// GPR[rd]← sign_extend(temp)
+	case OpCodeSRL:
+		rtVal := cpu.GetReg(ri.Rt)
+		s := uint(ri.Shamt & 0x1F)
+		temp := rtVal >> s
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// SRAV rd, rt, rs
+	// if (NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// s ← GPR[rs]4..0
+	// temp ← 0s || GPR[rt]31..s
+	// GPR[rd]← sign_extend(temp)
+	case OpCodeSRLV:
+		rsVal := cpu.GetReg(ri.Rs)
+		s := rsVal & 0x1F
+		temp := cpu.GetReg(ri.Rt) >> s
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// SUB rd, rs, rt
+	// if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// temp ← GPR[rs] - GPR[rt]
+	// if (32_bit_arithmetic_overflow) then
+	// 	SignalException(IntegerOverflow)
+	// else
+	// 	GPR[rd] ←temp
+	// endif
+	case OpCodeSUB:
+		rsVal := int32(cpu.GetReg(ri.Rs))
+		rtVal := int32(cpu.GetReg(ri.Rt))
+		temp := rsVal - rtVal
+
+		// Check for overflow
+		if utils.CheckSubtractionOverflow(rsVal, rtVal, temp) {
+			// Overflow occurred
+			vec := cpu.cp0.RaiseException(excOv, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		cpu.SetReg(ri.Rd, uint32(temp))
+		return nil, false
+
+	// SUBU rd, rs, rt
+	// if (NotWordValue(GPR[rs]) or NotWordValue(GPR[rt])) then UndefinedResult() endif
+	// temp ←GPR[rs] - GPR[rt]
+	// GPR[rd] ←temp
+	case OpCodeSUBU:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		temp := rsVal - rtVal
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
+
+	// TEQ rs, rt
+	// if GPR[rs] = GPR[rt] then
+	//	SignalException(Trap)
+	// endif
+	case OpCodeTEQ:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		if rsVal == rtVal {
+			vec := cpu.cp0.RaiseException(excTr, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+		return nil, false
+
+	// TGE rs, rt
+	// if GPR[rs] ≥ GPR[rt] then
+	//	SignalException(Trap)
+	// endif
+	case OpCodeTGE:
+		rsVal := int32(cpu.GetReg(ri.Rs))
+		rtVal := int32(cpu.GetReg(ri.Rt))
+		if rsVal >= rtVal {
+			vec := cpu.cp0.RaiseException(excTr, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+		return nil, false
+
+	// TGEU rs, rt
+	// if (0 || GPR[rs]) ≥ (0 || sign_extend(immediate)) then
+	//	SignalException(Trap)
+	// endif
+	case OpCodeTGEU:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		if rsVal >= rtVal {
+			vec := cpu.cp0.RaiseException(excTr, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+		return nil, false
+
+	// TLT rs, rt
+	// if GPR[rs] < GPR[rt] then
+	//	SignalException(Trap)
+	// endif
+	case OpCodeTLT:
+		rsVal := int32(cpu.GetReg(ri.Rs))
+		rtVal := int32(cpu.GetReg(ri.Rt))
+		if rsVal < rtVal {
+			vec := cpu.cp0.RaiseException(excTr, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+		return nil, false
+
+	// TLTU rs, rt
+	// if (0 || GPR[rs]) < (0 || sign_extend(immediate)) then
+	//	SignalException(Trap)
+	// endif
+	case OpCodeTLTU:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		if rsVal < rtVal {
+			vec := cpu.cp0.RaiseException(excTr, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+		return nil, false
+
+	// TNE rs, rt
+	// if GPR[rs] ≠ GPR[rt] then
+	//	SignalException(Trap)
+	// endif
+	case OpCodeTNE:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		if rsVal != rtVal {
+			vec := cpu.cp0.RaiseException(excTr, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+		return nil, false
+
+	// XOR rd, rs, rt
+	// GPR[rd] ← GPR[rs] xor GPR[rt]
+	case OpCodeXOR:
+		rsVal := cpu.GetReg(ri.Rs)
+		rtVal := cpu.GetReg(ri.Rt)
+		temp := rsVal ^ rtVal
+		cpu.SetReg(ri.Rd, temp)
+		return nil, false
 	}
 
 	return nil, false
