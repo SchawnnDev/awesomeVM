@@ -24,3 +24,6 @@ go.work
 
 # GoLand
 .idea/
+
+# Agents
+.github/agents
