@@ -79,6 +79,31 @@ const (
 	// I-Type opcodes
 	OpCodeADDI  OpCode = 0x8
 	OpCodeADDIU OpCode = 0x9
+	OpCodeANDI  OpCode = 0xC
+	//OpCodeDADDI  OpCode = 0x18 MIPS64
+	//OpCodeDADDIU OpCode = 0x19 MIPS64
+	OpCodeLB    OpCode = 0x20
+	OpCodeLBU   OpCode = 0x24
+	OpCodeLH    OpCode = 0x21
+	OpCodeLHU   OpCode = 0x25
+	OPCodeLUI   OpCode = 0xF
+	OpCodeLW    OpCode = 0x23
+	OpCodeLWU   OpCode = 0x27
+	OpCodeORI   OpCode = 0xD
+	OpCodeSB    OpCode = 0x28
+	OpCodeSH    OpCode = 0x29
+	OpCodeSLTI  OpCode = 0xA
+	OpCodeSLTIU OpCode = 0xB
+	OpCodeSW    OpCode = 0x2B
+	OpCodeXORI  OpCode = 0xE
+	// OpCodeLL   OpCode = 0x30 // for atomic operations
+	// OpCodeSC   OpCode = 0x38 // for atomic operations
+	// OpCodeLWC1 OpCode = 0x31 // for floating point
+	// OpCodeSWC1 OpCode = 0x39 // for floating point
+
+	// J-Type opcodes
+	OpCodeJ   OpCode = 0x2
+	OpCodeJAL OpCode = 0x3
 
 	// COP0 related opcodes
 	OpCodeCOP0 uint8 = 0x10
@@ -623,9 +648,15 @@ func (ri RTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
 		temp := rsVal ^ rtVal
 		cpu.SetReg(ri.Rd, temp)
 		return nil, false
+
+	default:
+		// Unknown/unsupported opcode -> treat as reserved instruction (ISA exception)
+		vec := cpu.cp0.RaiseException(excRI, cpu.PC, cpu.inDelay)
+		cpu.PC = vec
+		cpu.inDelay = false
+		return nil, false
 	}
 
-	return nil, false
 }
 
 type ITypeInstruction struct {
@@ -645,7 +676,371 @@ func (ii ITypeInstruction) Decode(instr uint32) Instruction {
 }
 
 func (ii *ITypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
-	return nil, false
+	switch OpCode(ii.Opcode) {
+
+	// ADDI rt, rs, immediate
+	// -> traps on overflow
+	// if (NotWordValue(GPR[rs]) or NotWordValue(sign_extend(immediate))) then UndefinedResult() endif
+	// temp ← GPR[rs] + sign_extend(immediate)
+	// if (32_bit_arithmetic_overflow) then
+	//	SignalException(IntegerOverflow)
+	// else
+	//	GPR[rt] ← sign_extend(temp31..0)
+	// endif
+	case OpCodeADDI:
+		rsVal := int32(cpu.GetReg(ii.Rs))
+		immVal := int32(int16(ii.Immediate)) // sign-extend immediate
+		temp := rsVal + immVal
+
+		// Check for overflow
+		if utils.CheckAdditionOverflow(rsVal, immVal, temp) {
+			// Overflow occurred
+			vec := cpu.cp0.RaiseException(excOv, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		cpu.SetReg(ii.Rt, uint32(temp))
+		return nil, false
+
+	// ADDIU rt, rs, immediate
+	// if (NotWordValue(GPR[rs]) or NotWordValue(sign_extend(immediate))) then UndefinedResult() endif
+	// temp ← GPR[rs] + sign_extend(immediate)
+	// GPR[rt] ← sign_extend(temp31..0)
+	case OpCodeADDIU:
+		rsVal := cpu.GetReg(ii.Rs)
+		immVal := uint32(int16(ii.Immediate)) // sign-extend immediate
+		temp := rsVal + immVal
+		cpu.SetReg(ii.Rt, temp)
+		return nil, false
+
+	// ANDI rt, rs, immediate
+	// GPR[rt] ← GPR[rs] and zero_extend(immediate)
+	case OpCodeANDI:
+		rsVal := cpu.GetReg(ii.Rs)
+		immVal := uint32(ii.Immediate) // zero-extend immediate
+		temp := rsVal & immVal
+		cpu.SetReg(ii.Rt, temp)
+		return nil, false
+
+	// LB rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, LOAD)
+	// pAddr ← pAddr(pSize-1..2) || (pAddr1..0 xor ReverseEndian^2)
+	// memword ← LoadMemory(uncached, BYTE, pAddr, vAddr, DATA)
+	// byte ← vAddr(1..0) xor BigEndianCPU^2
+	// GPR[rt] ← sign_extend(memword(7+8*byte..8*byte))
+	case OpCodeLB:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		b, ok := cpu.Memory.LoadWord(uint32(addr))
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		// sign extend byte → 32 bits
+		cpu.SetReg(ii.Rt, uint32(int8(b)))
+		return nil, false
+
+	// LBU rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, LOAD)
+	// pAddr ← pAddr(pSize-1..2) || (pAddr1..0 xor ReverseEndian^2)
+	// memword ← LoadMemory(uncached, BYTE, pAddr, vAddr, DATA)
+	// byte ← vAddr(1..0) xor BigEndianCPU^2
+	// GPR[rt] ← zero_extend(memword(7+8*byte..8*byte))
+	case OpCodeLBU:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		b, ok := cpu.Memory.LoadWord(uint32(addr))
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		// zero extend byte → 32 bits
+		cpu.SetReg(ii.Rt, uint32(b))
+		return nil, false
+
+	// LH rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, LOAD)
+	// pAddr ← pAddr(pSize-1..1) || (pAddr0 xor ReverseEndian^1)
+	// memword ← LoadMemory(uncached, HALFWORD, pAddr, vAddr, DATA)
+	// halfword ← vAddr(1 xor BigEndianCPU^1)
+	// GPR[rt] ← sign_extend(memword(15+16*halfword..16*halfword))
+	case OpCodeLH:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		if addr%2 != 0 {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		h, ok := cpu.Memory.LoadWord(uint32(addr))
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		cpu.SetReg(ii.Rt, uint32(int16(h)))
+		return nil, false
+
+	// LHU rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, LOAD)
+	// pAddr ← pAddr(pSize-1..1) || (pAddr0 xor ReverseEndian^1)
+	// memword ← LoadMemory(uncached, HALFWORD, pAddr, vAddr, DATA)
+	// halfword ← vAddr(1 xor BigEndianCPU^1)
+	// GPR[rt] ← zero_extend(memword(15+16*halfword..16*halfword))
+	case OpCodeLHU:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		if addr%2 != 0 {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		h, ok := cpu.Memory.LoadWord(uint32(addr))
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		cpu.SetReg(ii.Rt, h)
+		return nil, false
+
+	// LUI rt, immediate
+	// GPR[rt] ← immediate || 16b'0
+	case OPCodeLUI:
+		immVal := uint32(ii.Immediate)
+		temp := immVal << 16
+		cpu.SetReg(ii.Rt, temp)
+		return nil, false
+
+	// LW rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, LOAD)
+	// pAddr ← pAddr(pSize-1..2) || (pAddr1..0 xor ReverseEndian^2)
+	// memword ← LoadMemory(uncached, WORD, pAddr, vAddr, DATA)
+	// GPR[rt] ← sign_extend(memword31..0)
+	case OpCodeLW:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		if addr%4 != 0 {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		w, ok := cpu.Memory.LoadWord(uint32(addr))
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		cpu.SetReg(ii.Rt, w)
+		return nil, false
+
+		// LWU rt, offset(rs)
+		// vAddr ← sign_extend(offset) + GPR[base]
+		// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, LOAD)
+		// pAddr ← pAddr(pSize-1..2) || (pAddr1..0 xor ReverseEndian^2)
+		// memword ← LoadMemory(uncached, WORD, pAddr, vAddr, DATA)
+		// GPR[rt] ← zero_extend(memword31..0)
+	case OpCodeLWU:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		if addr%4 != 0 {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		w, ok := cpu.Memory.LoadWord(uint32(addr))
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdEL, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		cpu.SetReg(ii.Rt, w)
+		return nil, false
+
+	// ORI rt, rs, immediate
+	// GPR[rt] ← GPR[rs] or zero_extend(immediate)
+	case OpCodeORI:
+		rsVal := cpu.GetReg(ii.Rs)
+		immVal := uint32(ii.Immediate) // zero-extend immediate
+		temp := rsVal | immVal
+		cpu.SetReg(ii.Rt, temp)
+		return nil, false
+
+	// SB rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, STORE)
+	// pAddr ← pAddr(pSize-1..2) || (pAddr1..0 xor ReverseEndian^2)
+	// byte ← vAddr(1..0) xor BigEndianCPU^2
+	// StoreMemory(uncached, BYTE, pAddr, vAddr, DATA, GPR[rt](7+8*byte..8*byte))
+	case OpCodeSB:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		b := byte(cpu.GetReg(ii.Rt) & 0xFF)
+
+		ok := cpu.Memory.StoreWord(uint32(addr), uint32(b))
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdES, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		return nil, false
+
+	// SH rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, STORE)
+	// pAddr ← pAddr(pSize-1..1) || (pAddr0 xor ReverseEndian^1)
+	// halfword ← vAddr(1 xor BigEndianCPU^1)
+	// StoreMemory(uncached, HALFWORD, pAddr, vAddr, DATA, GPR[rt](15+16*halfword..16*halfword))
+	case OpCodeSH:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		if addr%2 != 0 {
+			vec := cpu.cp0.RaiseException(excAdES, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		h := cpu.GetReg(ii.Rt) & 0xFFFF
+
+		ok := cpu.Memory.StoreWord(uint32(addr), h)
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdES, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		return nil, false
+
+	// SLTI rt, rs, immediate
+	// if GPR[rs] < sign_extend(immediate) then
+	//	GPR[rt] ← 0GPRLEN-1 || 1
+	// else
+	//	GPR[rt] ← 0GPRLEN
+	// endif
+	case OpCodeSLTI:
+		rsVal := int32(cpu.GetReg(ii.Rs))
+		immVal := int32(int16(ii.Immediate)) // sign-extend immediate
+
+		if rsVal < immVal {
+			cpu.SetReg(ii.Rt, 1)
+		} else {
+			cpu.SetReg(ii.Rt, 0)
+		}
+
+		return nil, false
+
+	// SLTIU rt, rs, immediate
+	// if (0 || GPR[rs]) < (0 || sign_extend(immediate)) then
+	//	GPR[rt] ← 0GPRLEN-1 || 1
+	// else
+	//	GPR[rt] ← 0GPRLEN
+	// endif
+	case OpCodeSLTIU:
+		rsVal := cpu.GetReg(ii.Rs)
+		immVal := uint32(int16(ii.Immediate)) // sign-extend immediate
+
+		if rsVal < immVal {
+			cpu.SetReg(ii.Rt, 1)
+		} else {
+			cpu.SetReg(ii.Rt, 0)
+		}
+
+		return nil, false
+
+	// SW rt, offset(rs)
+	// vAddr ← sign_extend(offset) + GPR[base]
+	// (pAddr, uncached) ← AddressTranslation(vAddr, DATA, STORE)
+	// pAddr ← pAddr(pSize-1..2) || (pAddr1..0 xor ReverseEndian^2)
+	// StoreMemory(uncached, WORD, pAddr, vAddr, DATA, GPR[rt](31..0))
+	case OpCodeSW:
+		base := int32(cpu.GetReg(ii.Rs))
+		offset := int32(int16(ii.Immediate))
+		addr := base + offset
+
+		if addr%4 != 0 {
+			vec := cpu.cp0.RaiseException(excAdES, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		w := cpu.GetReg(ii.Rt)
+
+		ok := cpu.Memory.StoreWord(uint32(addr), w)
+		if !ok {
+			vec := cpu.cp0.RaiseException(excAdES, cpu.PC, cpu.inDelay)
+			cpu.PC = vec
+			cpu.inDelay = false
+			return nil, false
+		}
+
+		return nil, false
+
+	// XORI rt, rs, immediate
+	// GPR[rt] ← GPR[rs] xor zero_extend(immediate)
+	case OpCodeXORI:
+		rsVal := cpu.GetReg(ii.Rs)
+		immVal := uint32(ii.Immediate) // zero-extend immediate
+		temp := rsVal ^ immVal
+		cpu.SetReg(ii.Rt, temp)
+		return nil, false
+
+	default:
+		// Unknown/unsupported opcode -> treat as reserved instruction (ISA exception)
+		vec := cpu.cp0.RaiseException(excRI, cpu.PC, cpu.inDelay)
+		cpu.PC = vec
+		cpu.inDelay = false
+		return nil, false
+	}
 }
 
 type JTypeInstruction struct {
@@ -661,7 +1056,37 @@ func (ji JTypeInstruction) Decode(instr uint32) Instruction {
 }
 
 func (ji JTypeInstruction) Execute(cpu *CPU) (nextPC *uint32, delaySlot bool) {
-	return nil, false
+
+	switch OpCode(ji.Opcode) {
+
+	// J target
+	// I+ 1 :PC ← (PC + 4)(31..28) || target || 00
+	case OpCodeJ:
+		// Calculate new PC, combining upper 4 bits of PC+4 with target address shifted left by 2
+		// to form a full 32-bit address
+		newPC := (cpu.PC+4)&0xF0000000 | (ji.Addr << 2)
+		return &newPC, true
+
+		// JAL target
+		// I: GPR[31] ← PC + 8
+		// I+ 1 :PC ← (PC + 4)(31..28) || target || 00
+	case OpCodeJAL:
+		// Calculate return address (PC + 8 because of delay slot)
+		retAddr := cpu.PC + 8
+		cpu.SetReg(31, retAddr)
+
+		// Calculate new PC
+		newPC := (cpu.PC+4)&0xF0000000 | (ji.Addr << 2)
+		return &newPC, true
+
+	default:
+		// Unknown/unsupported opcode -> treat as reserved instruction (ISA exception)
+		vec := cpu.cp0.RaiseException(excRI, cpu.PC, cpu.inDelay)
+		cpu.PC = vec
+		cpu.inDelay = false
+		return nil, false
+	}
+
 }
 
 // COP0Instruction handles all CP0 (coprocessor 0) instructions
